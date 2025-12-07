@@ -1,0 +1,158 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <title>Demo E-Commerce Cart</title>
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    body { font-family: Arial, sans-serif; padding: 20px; max-width: 900px; margin: auto; }
+    .product { border: 1px solid #ddd; padding: 12px; margin-bottom: 10px; display:flex; justify-content:space-between; align-items:center; }
+    .cart { border: 1px solid #aaa; padding: 12px; margin-top: 20px; }
+    button { padding: 6px 10px; }
+    input.qty { width: 50px; }
+  </style>
+</head>
+<body>
+  <h1>Simple E-Commerce Shopping Cart (Demo)</h1>
+  <div id="products"></div>
+
+  <div class="cart">
+    <h2>Your Cart</h2>
+    <div id="cartItems">Cart is empty.</div>
+    <div style="margin-top:10px;">
+      <strong>Total: ₹<span id="cartTotal">0</span></strong>
+      <div style="margin-top:8px;">
+        <button id="checkoutBtn">Checkout</button>
+        <button id="refreshBtn">Refresh Cart</button>
+      </div>
+    </div>
+  </div>
+
+<script>
+async function fetchProducts(){
+  const res = await fetch('/api/products');
+  return res.json();
+}
+
+async function fetchCart(){
+  const res = await fetch('/api/cart');
+  return res.json();
+}
+
+function renderProducts(list){
+  const container = document.getElementById('products');
+  container.innerHTML = '';
+  list.forEach(p => {
+    const div = document.createElement('div');
+    div.className = 'product';
+    div.innerHTML = `
+      <div>
+        <h3>${p.name}</h3>
+        <p>${p.description}</p>
+        <strong>₹${p.price}</strong>
+      </div>
+      <div style="text-align:right;">
+        <input type="number" class="qty" value="1" min="1" id="qty-${p.id}" />
+        <div style="margin-top:8px;">
+          <button data-id="${p.id}">Add to cart</button>
+        </div>
+      </div>
+    `;
+    container.appendChild(div);
+    div.querySelector('button').addEventListener('click', async (e) => {
+      const id = e.target.dataset.id;
+      const qty = parseInt(document.getElementById(`qty-${id}`).value || 1, 10);
+      await fetch('/api/cart/add', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ productId: id, qty })
+      });
+      alert('Added to cart');
+      refreshCart();
+    });
+  });
+}
+
+function renderCart(cart){
+  const container = document.getElementById('cartItems');
+  if (!cart.items || cart.items.length === 0) {
+    container.innerHTML = 'Cart is empty.';
+    document.getElementById('cartTotal').innerText = '0';
+    return;
+  }
+  const list = document.createElement('div');
+  cart.items.forEach(it => {
+    const itemDiv = document.createElement('div');
+    itemDiv.style.display = 'flex';
+    itemDiv.style.justifyContent = 'space-between';
+    itemDiv.style.alignItems = 'center';
+    itemDiv.style.marginBottom = '8px';
+    itemDiv.innerHTML = `
+      <div>
+        <strong>${it.name}</strong><br/>
+        ₹${it.price} x 
+        <input type="number" min="0" value="${it.qty}" data-id="${it.productId}" class="cart-qty" style="width:60px" />
+        = ₹${it.subtotal}
+      </div>
+      <div>
+        <button data-id="${it.productId}" class="remove-btn">Remove</button>
+      </div>
+    `;
+    list.appendChild(itemDiv);
+  });
+  container.innerHTML = '';
+  container.appendChild(list);
+  document.getElementById('cartTotal').innerText = cart.total;
+
+  // hooks for qty change and remove
+  document.querySelectorAll('.cart-qty').forEach(inp => {
+    inp.addEventListener('change', async (e) => {
+      const id = e.target.dataset.id;
+      const qty = parseInt(e.target.value || 0, 10);
+      await fetch('/api/cart/update', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ productId: id, qty })
+      });
+      refreshCart();
+    });
+  });
+  document.querySelectorAll('.remove-btn').forEach(btn => {
+    btn.addEventListener('click', async (e) => {
+      const id = e.target.dataset.id;
+      await fetch('/api/cart/remove', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({ productId: id })
+      });
+      refreshCart();
+    });
+  });
+}
+
+async function refreshCart(){
+  const cart = await fetchCart();
+  renderCart(cart);
+}
+
+document.getElementById('checkoutBtn').addEventListener('click', async () => {
+  const res = await fetch('/api/checkout', { method: 'POST' });
+  const data = await res.json();
+  if (res.ok) {
+    alert(`Order placed! Order ID: ${data.orderId}`);
+    refreshCart();
+  } else {
+    alert(`Checkout failed: ${data.error || JSON.stringify(data)}`);
+  }
+});
+
+document.getElementById('refreshBtn').addEventListener('click', refreshCart);
+
+(async function init(){
+  const products = await fetchProducts();
+  renderProducts(products);
+  refreshCart();
+})();
+</script>
+</body>
+</html>
