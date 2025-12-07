@@ -1,0 +1,105 @@
+// server.js
+const express = require("express");
+const session = require("express-session");
+const bodyParser = require("body-parser");
+const { v4: uuidv4 } = require("uuid");
+const path = require("path");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Simple in-memory product list
+const products = [
+  { id: "p1", name: "T-Shirt", price: 299, description: "Comfortable cotton tee" },
+  { id: "p2", name: "Sneakers", price: 2499, description: "Sporty sneakers" },
+  { id: "p3", name: "Backpack", price: 899, description: "Durable backpack" },
+  { id: "p4", name: "Watch", price: 1999, description: "Stylish analog watch" }
+];
+
+app.use(bodyParser.json());
+app.use(express.static(path.join(__dirname, "public")));
+
+app.use(session({
+  genid: () => uuidv4(),
+  secret: "change_this_secret_in_production",
+  resave: false,
+  saveUninitialized: true,
+  cookie: { maxAge: 1000 * 60 * 60 } // 1 hour
+}));
+
+// ensure cart exists on session
+app.use((req, res, next) => {
+  if (!req.session.cart) req.session.cart = {}; // { productId: qty }
+  next();
+});
+
+// GET /api/products -> list products
+app.get("/api/products", (req, res) => {
+  res.json(products);
+});
+
+// GET /api/cart -> return cart items + totals
+app.get("/api/cart", (req, res) => {
+  const cart = req.session.cart;
+  const items = Object.entries(cart).map(([productId, qty]) => {
+    const product = products.find(p => p.id === productId);
+    return {
+      productId,
+      name: product?.name || "Unknown",
+      price: product?.price || 0,
+      qty,
+      subtotal: (product?.price || 0) * qty
+    };
+  });
+  const total = items.reduce((s, it) => s + it.subtotal, 0);
+  res.json({ items, total });
+});
+
+// POST /api/cart/add { productId, qty }
+app.post("/api/cart/add", (req, res) => {
+  const { productId, qty } = req.body;
+  const q = Math.max(1, parseInt(qty || 1, 10));
+  const product = products.find(p => p.id === productId);
+  if (!product) return res.status(404).json({ error: "Product not found" });
+
+  req.session.cart[productId] = (req.session.cart[productId] || 0) + q;
+  res.json({ success: true });
+});
+
+// POST /api/cart/update { productId, qty }
+app.post("/api/cart/update", (req, res) => {
+  const { productId, qty } = req.body;
+  const q = parseInt(qty, 10);
+  if (!req.session.cart[productId]) return res.status(400).json({ error: "Item not in cart" });
+
+  if (q <= 0) delete req.session.cart[productId];
+  else req.session.cart[productId] = q;
+  res.json({ success: true });
+});
+
+// POST /api/cart/remove { productId }
+app.post("/api/cart/remove", (req, res) => {
+  const { productId } = req.body;
+  delete req.session.cart[productId];
+  res.json({ success: true });
+});
+
+// POST /api/checkout -> simple checkout (clears cart)
+app.post("/api/checkout", (req, res) => {
+  const cart = req.session.cart;
+  const hasItems = Object.keys(cart).length > 0;
+  if (!hasItems) return res.status(400).json({ error: "Cart is empty" });
+
+  // In real app: handle payment, orders DB, email, etc.
+  // Here: just clear cart and return a simple order confirmation
+  const orderId = uuidv4();
+  req.session.cart = {};
+  res.json({ success: true, orderId, message: "Order placed successfully (demo)" });
+});
+
+// fallback: serve index
+app.get("*", (req, res) => {
+  res.sendFile(path.join(__dirname, "public/index.html"));
+});
+
+app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
